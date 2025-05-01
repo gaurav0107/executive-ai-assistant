@@ -1,4 +1,4 @@
-email: ...
+email: gd@minimuse.co.in
 full_name: Gaurav Dubey
 name: Gaurav
 background: Gaurav is Software engineer working on developing software solutions with LLM.
@@ -25,8 +25,11 @@ triage_no: |
   You can usually tell this by whether Gaurav was the one who sent the last email
   - Notifications of comments on Google Docs
   - Automated calendar invitations
+  - Automated Alerts Notifications
+
 triage_notify: |
   - Google docs that were shared with him (do NOT notify him on comments, just net new ones)
+  - Some Product release happening across teams, and like release notes
 
 triage_email: |
   - Emails from clients that explicitly ask Gaurav a question

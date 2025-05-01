@@ -169,9 +169,19 @@ def fetch_group_emails(
     to_email,
     minutes_since: int = 30,
     gmail_token: str | None = None,
-    gmail_secret: str | None = None,
+    gmail_secret: str | None = None
 ) -> Iterable[EmailData]:
+    """
+    Fetch emails from a delegated an account.
+    
+    Args:
+        to_email: Email address to filter by
+        minutes_since: Only fetch emails from the last X minutes
+        gmail_token: Optional Gmail token
+        gmail_secret: Optional Gmail secret
+    """
     creds = get_credentials(gmail_token, gmail_secret)
+    
 
     service = build("gmail", "v1", credentials=creds)
     after = int((datetime.now() - timedelta(minutes=minutes_since)).timestamp())
@@ -179,31 +189,46 @@ def fetch_group_emails(
     query = f"(to:{to_email} OR from:{to_email}) after:{after}"
     messages = []
     nextPageToken = None
+    user_id = "me"
+
     # Fetch messages matching the query
     while True:
-        results = (
-            service.users()
-            .messages()
-            .list(userId="me", q=query, pageToken=nextPageToken)
-            .execute()
-        )
-        if "messages" in results:
-            messages.extend(results["messages"])
-        nextPageToken = results.get("nextPageToken")
-        if not nextPageToken:
+        try:
+            results = (
+                service.users()
+                .messages()
+                .list(userId=user_id, q=query, pageToken=nextPageToken)
+                .execute()
+            )
+            if "messages" in results:
+                messages.extend(results["messages"])
+            nextPageToken = results.get("nextPageToken")
+            if not nextPageToken:
+                break
+        except Exception as e:
+            logger.error(f"Error fetching messages: {e}")
             break
 
     count = 0
     for message in messages:
         try:
             msg = (
-                service.users().messages().get(userId="me", id=message["id"]).execute()
+                service.users()
+                .messages()
+                .get(userId=user_id, id=message["id"])
+                .execute()
             )
             thread_id = msg["threadId"]
             payload = msg["payload"]
             headers = payload.get("headers")
+            
             # Get the thread details
-            thread = service.users().threads().get(userId="me", id=thread_id).execute()
+            thread = (
+                service.users()
+                .threads()
+                .get(userId=user_id, id=thread_id)
+                .execute()
+            )
             messages_in_thread = thread["messages"]
             # Check the last message in the thread
             last_message = messages_in_thread[-1]
@@ -277,6 +302,85 @@ def mark_as_read(
     service.users().messages().modify(
         userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
     ).execute()
+
+
+def create_label(
+    label_name: str,
+    service,
+) -> str:
+    """
+    Creates a new Gmail label if it doesn't exist.
+
+    Args:
+        label_name: Name of the label to create.
+        service: Gmail API service instance.
+
+    Returns:
+        str: ID of the created or existing label.
+    """
+    try:
+        # First check if label already exists
+        results = service.users().labels().list(userId='me').execute()
+        labels = results.get('labels', [])
+        
+        # Check if label exists
+        for label in labels:
+            if label['name'].lower() == label_name.lower():
+                return label['id']
+        
+        # If not found, create new label
+        label_object = {
+            'name': label_name,
+            'messageListVisibility': 'show',
+            'labelListVisibility': 'labelShow'
+        }
+        created_label = service.users().labels().create(
+            userId='me',
+            body=label_object
+        ).execute()
+        return created_label['id']
+    
+    except Exception as e:
+        logger.error(f"Error creating label {label_name}: {e}")
+        raise
+
+
+def add_labels_to_email(
+    message_id: str,
+    label_names: list[str],
+    gmail_token: str | None = None,
+    gmail_secret: str | None = None,
+):
+    """
+    Adds one or more labels to a Gmail message, creating labels if they don't exist.
+
+    Args:
+        message_id: The ID of the Gmail message.
+        label_names: A list of label names to add to the message.
+        gmail_token: Optional Gmail token.
+        gmail_secret: Optional Gmail secret.
+    """
+    creds = get_credentials(gmail_token, gmail_secret)
+    service = build("gmail", "v1", credentials=creds)
+    
+    # Convert label names to IDs, creating labels if needed
+    label_ids = []
+    for label_name in label_names:
+        try:
+            label_id = create_label(label_name, service)
+            label_ids.append(label_id)
+        except Exception as e:
+            logger.error(f"Failed to create/get label {label_name}: {e}")
+            continue
+    
+    if label_ids:
+        service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"addLabelIds": label_ids}
+        ).execute()
+    else:
+        logger.warning("No valid labels to add")
 
 
 class CalInput(BaseModel):
@@ -417,3 +521,60 @@ def send_calendar_invite(
     except Exception as e:
         logger.info(f"An error occurred while sending the calendar invite: {e}")
         return False
+
+
+def create_draft_email(
+    email_id: str,
+    draft_text: str,
+    email_address: str,
+    gmail_token: str | None = None,
+    gmail_secret: str | None = None,
+    addn_receipients=None,
+):
+    """
+    Creates a draft email reply to an existing email thread.
+
+    Args:
+        email_id: The ID of the original email to reply to.
+        draft_text: The text content of the draft reply.
+        email_address: The email address of the sender.
+        gmail_token: Optional Gmail token.
+        gmail_secret: Optional Gmail secret.
+        addn_receipients: Optional list of additional recipients.
+
+    Returns:
+        The draft message object containing the draft ID and other metadata.
+    """
+    creds = get_credentials(gmail_token, gmail_secret)
+    service = build("gmail", "v1", credentials=creds)
+    
+    # Get the original message to extract headers
+    message = service.users().messages().get(userId="me", id=email_id).execute()
+    headers = message["payload"]["headers"]
+    
+    # Get message ID and thread ID
+    message_id = next(
+        header["value"] for header in headers if header["name"].lower() == "message-id"
+    )
+    thread_id = message["threadId"]
+
+    # Get recipients
+    recipients = get_recipients(headers, email_address, addn_receipients)
+
+    # Get subject
+    subject = next(
+        header["value"] for header in headers if header["name"].lower() == "subject"
+    )
+
+    # Create the draft message
+    draft_message = create_message(
+        "me", recipients, subject, draft_text, thread_id, message_id
+    )
+
+    # Create the draft
+    draft = service.users().drafts().create(
+        userId="me",
+        body={"message": draft_message}
+    ).execute()
+
+    return draft
