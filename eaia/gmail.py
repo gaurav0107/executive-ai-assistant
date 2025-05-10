@@ -17,6 +17,7 @@ import email.utils
 
 from langchain_core.tools import tool
 from langchain_core.pydantic_v1 import BaseModel, Field
+from eaia.main.config import get_config
 
 from eaia.schemas import EmailData
 
@@ -30,6 +31,10 @@ _PORT = 54191
 _SECRETS_DIR = _ROOT / ".secrets"
 _SECRETS_PATH = str(_SECRETS_DIR / "secrets.json")
 _TOKEN_PATH = str(_SECRETS_DIR / "token.json")
+_EA_SECRETS_PATH = str(_SECRETS_DIR / "ea_secrets.json")
+_EA_TOKEN_PATH = str(_SECRETS_DIR / "ea_token.json")
+
+
 
 
 def get_credentials(
@@ -167,6 +172,7 @@ def send_email(
 
 def fetch_group_emails(
     to_email,
+    ea_email,
     minutes_since: int = 30,
     gmail_token: str | None = None,
     gmail_secret: str | None = None
@@ -186,7 +192,7 @@ def fetch_group_emails(
     service = build("gmail", "v1", credentials=creds)
     after = int((datetime.now() - timedelta(minutes=minutes_since)).timestamp())
 
-    query = f"(to:{to_email} OR from:{to_email}) after:{after}"
+    query = f"(to:{to_email} OR from:{to_email} OR to:{ea_email} OR from:{ea_email}) after:{after}"
     messages = []
     nextPageToken = None
     user_id = "me"
@@ -578,3 +584,111 @@ def create_draft_email(
     ).execute()
 
     return draft
+
+
+def add_ea_to_thread(
+    self_email: str,
+    thread_id: str,
+    new_recipient: str,
+    message_text: str,
+    gmail_token: str | None = None,
+    gmail_secret: str | None = None,
+):
+    """
+    Adds a new recipient to an existing email thread by replying to all and including them.
+    Properly handles reply-all functionality including the original sender and all CC recipients.
+
+    Args:
+        self_email: The email address of the sender (EA).
+        thread_id: The ID of the email thread to add the recipient to.
+        new_recipient: Email address of the person to add to the thread.
+        message_text: Text content of the message to send.
+        gmail_token: Optional Gmail token.
+        gmail_secret: Optional Gmail secret.
+
+    Returns:
+        The sent message object containing the message ID and other metadata.
+    """
+    creds = get_credentials(gmail_token, gmail_secret)
+    service = build("gmail", "v1", credentials=creds)
+
+    # Get the full thread
+    thread = service.users().threads().get(userId="me", id=thread_id).execute()
+    latest_message = thread["messages"][-1]  # Use the latest message
+    headers = latest_message["payload"]["headers"]
+
+    def get_header(name):
+        return next((h["value"] for h in headers if h["name"].lower() == name.lower()), "")
+
+    # Get all relevant headers
+    subject = get_header("Subject")
+    to = get_header("To")
+    cc = get_header("Cc")
+    from_email = get_header("From")
+    message_id = get_header("Message-ID")
+
+    # Prepare recipient lists
+    to_list = [email.strip() for email in to.split(",") if email.strip()] if to else []
+    cc_list = [email.strip() for email in cc.split(",") if email.strip()] if cc else []
+    
+    # Add the original sender to recipients if not already present
+    if from_email and from_email not in to_list and from_email not in cc_list:
+        to_list.append(from_email)
+    
+    # Add new recipient if not already in the thread
+    if new_recipient not in cc_list and new_recipient not in to_list:
+        cc_list.append(new_recipient)
+
+    # Remove self from recipient lists
+    to_list = [e for e in to_list if self_email not in e]
+    cc_list = [e for e in cc_list if self_email not in e]
+
+    # Build conversation history
+    conversation_history = []
+    for msg in reversed(thread["messages"]):  # Process messages in chronological order
+        msg_headers = msg["payload"]["headers"]
+        msg_from = next((h["value"] for h in msg_headers if h["name"].lower() == "from"), "")
+        msg_date = next((h["value"] for h in msg_headers if h["name"].lower() == "date"), "")
+        msg_body = extract_message_part(msg["payload"])
+        
+        conversation_history.append(
+            f"On {msg_date}, {msg_from} wrote:\n{msg_body}\n"
+        )
+
+    # Combine conversation history with new message
+    quoted_body = (
+        f"Adding: {new_recipient}\n\n"
+        f"{message_text}\n\n"
+        f"{'='*50}\n"
+        f"{''.join(conversation_history)}"
+    )
+
+    # Construct the reply message
+    message = MIMEMultipart()
+    message["to"] = ", ".join(to_list)
+    if cc_list:  # Only add CC header if there are CC recipients
+        message["cc"] = ", ".join(cc_list)
+    message["from"] = "me"
+    message["subject"] = subject
+    message["In-Reply-To"] = message_id
+    message["References"] = message_id
+    message["Message-ID"] = email.utils.make_msgid()
+
+    message.attach(MIMEText(quoted_body, "plain"))
+
+    # Encode and send
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    message_object = {
+        "raw": raw,
+        "threadId": thread_id
+    }
+
+    try:
+        sent_message = service.users().messages().send(
+            userId="me",
+            body=message_object
+        ).execute()
+        return sent_message
+    except Exception as e:
+        logger.error(f"Error adding recipient to thread: {e}")
+        raise

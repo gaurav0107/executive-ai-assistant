@@ -13,7 +13,7 @@ from eaia.main.fewshot import get_few_shot_examples
 from eaia.main.config import get_config
 
 
-triage_prompt = """You are {full_name}'s executive assistant. You are a top-notch executive assistant who cares about {name} performing as well as possible.
+triage_prompt = """You name is {ea_name} and your email is {ea_email} and you are {full_name}'s executive assistant. You are a top-notch executive assistant who cares about {name} performing as well as possible.
 
 {background}. 
 
@@ -27,6 +27,9 @@ Emails that are worth responding to:
 
 There are also other things that {name} should know about, but don't require an email response. For these, you should notify {name} (using the `notify` response). Examples of this include:
 {triage_notify}
+
+
+If there is an email where you {ea_name} are tagged by {name}, then you should respond `action`.
 
 For emails not worth responding to, respond `no`. For something where {name} should respond over email, respond `email`. If it's important to notify {name}, but no email is required, respond `notify`. \
 
@@ -55,6 +58,8 @@ async def triage_input(state: State, config: RunnableConfig, store: BaseStore):
         subject=state["email"]["subject"],
         fewshotexamples=examples,
         name=prompt_config["name"],
+        ea_name=prompt_config["ea_name"],
+        ea_email=prompt_config["ea_email"],
         full_name=prompt_config["full_name"],
         background=prompt_config["background"],
         triage_no=prompt_config["triage_no"],

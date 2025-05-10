@@ -17,11 +17,16 @@ async def main(
     early: bool = True,
     rerun: bool = False,
     email: Optional[str] = None,
+    ea_email: Optional[str] = None,
 ):
     if email is None:
         email_address = get_config({"configurable": {}})["email"]
     else:
         email_address = email
+    if ea_email is None:
+        ea_email = get_config({"configurable": {}})["ea_email"]
+    else:
+        ea_email = ea_email
     if url is None:
         client = get_client(url="http://127.0.0.1:2024")
     else:
@@ -32,6 +37,7 @@ async def main(
     # TODO: This really should be async
     for email in fetch_group_emails(
         email_address,
+        ea_email=ea_email,
         minutes_since=minutes_since,
         gmail_token=gmail_token,
         gmail_secret=gmail_secret,
@@ -113,6 +119,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="The email address to use",
+    )
+    parser.add_argument(
+        "--ea_email",
+        type=str,
+        default=None,
+        help="The ea email address to use",
     )
 
     args = parser.parse_args()
