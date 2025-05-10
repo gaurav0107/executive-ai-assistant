@@ -3,14 +3,15 @@ from eaia.repository.store_init import user_config_store, user_preference_store
 import logging
 from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict, Any
-from eaia.gmail_manager.auth import get_user_credentials
+from eaia.gmail_manager.auth import send_auth_email, handle_oauth2callback
 import traceback
 logger = logging.getLogger(__name__)
+from fastapi import BackgroundTasks
 
 
 class UserSetupRequest(BaseModel):
-    esp: str
     email: EmailStr
+    esp: str
     ea_email: EmailStr
     name: str
     ea_name: str
@@ -21,17 +22,19 @@ class UserSetupResponse(BaseModel):
     details: Dict[str, Any]
 
 
-def setup_user(user_setup_request: UserSetupRequest) -> UserSetupResponse:
+def setup_user(user_setup_request: UserSetupRequest, background_tasks: BackgroundTasks) -> UserSetupResponse:
     """Setup user configuration and store it."""
     try:
 
         user_config_store.put(user_setup_request.email, user_setup_request.json())
 
         # Setup user credentials
-        get_user_credentials(user_setup_request.email)
+        background_tasks.add_task(send_auth_email, user_setup_request.email)
+        # send_auth_email(user_setup_request.email)
 
         # Setup EA credentials
-        get_user_credentials(user_setup_request.ea_email)
+        background_tasks.add_task(send_auth_email, user_setup_request.ea_email)
+        # send_auth_email(user_setup_request.ea_email)
        
         
         return UserSetupResponse(
@@ -67,3 +70,12 @@ def get_user_setup_status(email: str) -> UserSetupResponse:
         )
     except Exception as e:
         raise Exception(f"Error retrieving setup status: {str(e)}")
+
+
+
+def handle_oauth2callback_func(state: str, code: str, url: str):
+    try:
+        return handle_oauth2callback(state=state, code=code, url=url)
+    except Exception as e:
+        traceback.print_exc()
+        raise Exception(f"Error handling OAuth2 callback: {str(e)}")
