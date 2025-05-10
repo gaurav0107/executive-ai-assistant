@@ -3,11 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
 from typing import Dict, Any
-# from eaia.controllers.setup_controller import router as setup_router
+from eaia.controllers.setup_controller import router as setup_router
+from eaia.repository.store_init import user_config_store, user_token_store, user_preference_store
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -26,7 +29,7 @@ app.add_middleware(
 )
 
 # Include routers
-# app.include_router(setup_router)
+app.include_router(setup_router)
 
 class StatusResponse(BaseModel):
     status: str
@@ -75,6 +78,6 @@ async def health_check():
     """
     return {"status": "healthy"}
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

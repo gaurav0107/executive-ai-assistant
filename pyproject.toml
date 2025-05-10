@@ -21,6 +21,9 @@ pytz = "*"
 pyyaml = "*"
 python-dateutil = "^2.9.0.post0"
 python-dotenv = "^1.0.1"
+fastapi = "^0.115.12"
+pydantic = {extras = ["email"], version = "^2.11.4"}
+redis = "^6.0.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]
