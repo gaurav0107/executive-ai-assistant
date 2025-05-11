@@ -1,7 +1,9 @@
 import argparse
 import asyncio
 from typing import Optional
-from eaia.gmail import fetch_group_emails
+from eaia.gmail_manager.gmail import fetch_group_emails
+
+
 from eaia.agent.config.config import get_config
 from langgraph_sdk import get_client
 import httpx
@@ -9,44 +11,30 @@ import uuid
 import hashlib
 
 
-async def main(
-    url: Optional[str] = None,
-    minutes_since: int = 60,
-    gmail_token: Optional[str] = None,
-    gmail_secret: Optional[str] = None,
-    early: bool = True,
-    rerun: bool = False,
-    email: Optional[str] = None,
-    ea_email: Optional[str] = None,
-):
-    if email is None:
-        email_address = get_config({"configurable": {}})["email"]
-    else:
-        email_address = email
-    if ea_email is None:
-        ea_email = get_config({"configurable": {}})["ea_email"]
-    else:
-        ea_email = ea_email
-    if url is None:
-        client = get_client(url="http://127.0.0.1:2024")
-    else:
-        client = get_client(
-            url=url
-        )
+email_id = "gd@minimuse.co.in"
+url = "http://127.0.0.1:2024"
+minutes_since = 90
+client = get_client(url=url)
+early = False #whether to break when encountering seen emails
+rerun = True #whether to rerun all emails
 
-    # TODO: This really should be async
+async def main():
+    count = 0
     for email in fetch_group_emails(
-        email_address,
-        ea_email=ea_email,
+        user_email_id=email_id,
         minutes_since=minutes_since,
-        gmail_token=gmail_token,
-        gmail_secret=gmail_secret,
     ):
+        print(count)
+        count += 1
+        if count > 10:
+            break
         thread_id = str(
             uuid.UUID(hex=hashlib.md5(email["thread_id"].encode("UTF-8")).hexdigest())
         )
+        print(thread_id)
         try:
             thread_info = await client.threads.get(thread_id)
+            print("thread_info", thread_info)
         except httpx.HTTPStatusError as e:
             if "user_respond" in email:
                 continue
@@ -58,6 +46,7 @@ async def main(
             await client.threads.update_state(thread_id, None, as_node="__end__")
             continue
         recent_email = thread_info["metadata"].get("email_id")
+        print("recent_email", recent_email)
         if recent_email == email["id"]:
             if early:
                 break
@@ -67,75 +56,14 @@ async def main(
                 else:
                     continue
         await client.threads.update(thread_id, metadata={"email_id": email["id"]})
-
+        print("started run")
         await client.runs.create(
             thread_id,
             "main",
-            input={"email": email},
+            input={"email": email, "config": {"user_email_id": email_id, "user_name": "gd", "assistant_name": "lisa", "assistant_email": "lisa@minimuse.co.in"}},
             multitask_strategy="rollback",
         )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--url",
-        type=str,
-        default=None,
-        help="URL to run against",
-    )
-    parser.add_argument(
-        "--early",
-        type=int,
-        default=1,
-        help="whether to break when encountering seen emails",
-    )
-    parser.add_argument(
-        "--rerun",
-        type=int,
-        default=0,
-        help="whether to rerun all emails",
-    )
-    parser.add_argument(
-        "--minutes-since",
-        type=int,
-        default=60,
-        help="Only process emails that are less than this many minutes old.",
-    )
-    parser.add_argument(
-        "--gmail-token",
-        type=str,
-        default=None,
-        help="The token to use in communicating with the Gmail API.",
-    )
-    parser.add_argument(
-        "--gmail-secret",
-        type=str,
-        default=None,
-        help="The creds to use in communicating with the Gmail API.",
-    )
-    parser.add_argument(
-        "--email",
-        type=str,
-        default=None,
-        help="The email address to use",
-    )
-    parser.add_argument(
-        "--ea_email",
-        type=str,
-        default=None,
-        help="The ea email address to use",
-    )
-
-    args = parser.parse_args()
-    asyncio.run(
-        main(
-            url=args.url,
-            minutes_since=args.minutes_since,
-            gmail_token=args.gmail_token,
-            gmail_secret=args.gmail_secret,
-            early=bool(args.early),
-            rerun=bool(args.rerun),
-            email=args.email,
-        )
-    )
+    asyncio.run(main())

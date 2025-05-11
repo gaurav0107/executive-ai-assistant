@@ -17,7 +17,7 @@ from eaia.agent.human_inbox import (
     notify,
     send_cal_invite,
 )
-from eaia.gmail import (
+from eaia.gmail_manager.gmail import (
     send_email,
     create_draft_email,
     mark_as_read,
@@ -25,6 +25,7 @@ from eaia.gmail import (
     add_ea_to_thread,
     send_calendar_invite,
 )
+
 from eaia.schemas import (
     State,
 )
@@ -54,7 +55,8 @@ def create_email_draft(state, config):
     if isinstance(new_receipients, str):
         new_receipients = json.loads(new_receipients)
     create_draft_email(
-        state["email"]["id"],
+        state["config"]["user_email_id"],
+        state["email"]["id"],                                    
         _args["content"],
         email,
         addn_receipients=new_receipients,
@@ -63,30 +65,30 @@ def create_email_draft(state, config):
 
 
 def mark_as_read_node(state):
-    mark_as_read(state["email"]["id"])
+    print("state", state)
+    mark_as_read(state["config"]["user_email_id"], state["email"]["id"])
 
 
 def add_ea_to_thread_node(state):
-    self_email = get_config({"configurable": {}})["email"]
-    ea_email = get_config({"configurable": {}})["ea_email"]
-    ea_name = get_config({"configurable": {}})["ea_name"]
+    ea_name = state["config"]["assistant_name"]
     add_ea_to_thread(
-        self_email,
+        state["config"]["user_email_id"],
         state["email"]["thread_id"], 
-        ea_email, 
+        state["config"]["assistant_email"], 
         f"Hi {ea_name}, Adding you to this conversation")
 
 def label_unsure(state):
-    add_labels_to_email(state["email"]["id"], ["EA-UNSURE"])
+    add_labels_to_email(state["config"]["user_email_id"], state["email"]["id"], ["EA-UNSURE"])
     pass
 
 def label_notify(state):
-    add_labels_to_email(state["email"]["id"], ["EA-NOTIFY"])
+    print("state", state)
+    add_labels_to_email(state["config"]["user_email_id"], state["email"]["id"], ["EA-NOTIFY"])
     pass
 
 
 def label_skip(state):
-    add_labels_to_email(state["email"]["id"], ["EA-SKIP"])
+    add_labels_to_email(state["config"]["user_email_id"], state["email"]["id"], ["EA-SKIP"])
     pass
 
 

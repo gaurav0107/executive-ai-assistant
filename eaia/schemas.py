@@ -87,8 +87,14 @@ def convert_obj(o, m):
     else:
         return m
 
+class Config(TypedDict):
+    email_id: str
+    user_name: str
+    assistant_name: str
+    assistant_email: str
 
 class State(TypedDict):
+    config: Config
     email: EmailData
     triage: Annotated[RespondTo, convert_obj]
     messages: Annotated[List[AnyMessage], add_messages]

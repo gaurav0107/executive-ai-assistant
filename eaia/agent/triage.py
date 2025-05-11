@@ -12,6 +12,7 @@ from eaia.schemas import (
 from eaia.agent.fewshot import get_few_shot_examples
 from eaia.agent.config.config import get_config
 
+# ChatOpenAI.model_rebuild()
 
 triage_prompt = """You name is {ea_name} and your email is {ea_email} and you are {full_name}'s executive assistant. You are a top-notch executive assistant who cares about {name} performing as well as possible.
 
@@ -48,6 +49,7 @@ Subject: {subject}
 
 async def triage_input(state: State, config: RunnableConfig, store: BaseStore):
     model = config["configurable"].get("model", "gpt-4o-mini")
+    print(model)
     llm = ChatOpenAI(model=model, temperature=0)
     examples = await get_few_shot_examples(state["email"], store, config)
     prompt_config = get_config(config)

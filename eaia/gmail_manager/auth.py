@@ -158,7 +158,7 @@ class AuthService:
         """Initialize Gmail user."""
         return cls._send_auth_email(email)
 
-    def get_gmail_user_creds(cls, email: EmailStr) -> Credentials:
+    def get_credentials(cls, email: EmailStr) -> Credentials:
         """Get Gmail user."""
         user_token = user_token_store.get(email)
         if not user_token:
@@ -169,7 +169,7 @@ class AuthService:
     def get_gmail_user_status(cls, email: EmailStr) -> str:
         """Get Gmail user status."""
         try:
-            creds = cls.get_gmail_user_creds(email)
+            creds = cls.get_credentials(email)
             if creds.expired:
                 return "expired"
             else:
