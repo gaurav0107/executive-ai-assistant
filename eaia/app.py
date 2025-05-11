@@ -6,8 +6,9 @@ from typing import Dict, Any
 from datetime import datetime
 import uvicorn
 
-from eaia.controllers.setup_controller import router as setup_router
+from eaia.controllers.callback_controller import router as callback_router
 from eaia.repository.store_init import user_config_store, user_token_store, user_preference_store
+from eaia.controllers.user_controller import router as user_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -51,7 +52,8 @@ class AppController:
     
     def _register_routes(self) -> None:
         """Register all routes for the application."""
-        self.app.include_router(setup_router)
+        self.app.include_router(callback_router)
+        self.app.include_router(user_router)
         
         self.app.add_api_route(
             "/",

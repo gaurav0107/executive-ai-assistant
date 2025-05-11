@@ -35,20 +35,45 @@ _TOKEN_PATH = str(_SECRETS_DIR / "token.json")
 _PORT = 54191
 _REDIRECT_URI = 'http://127.0.0.1:2024/setup/oauth2callback'
 
-class UserCredentials(BaseModel):
-    """Model for storing user OAuth credentials."""
+class GmailCredentials(BaseModel):
     token: str
-    expiry: datetime
-    _scopes: List[str]
-    _default_scopes: Optional[List[str]] = None
-    _refresh_token: str
-    _granted_scopes: List[str]
-    _token_uri: HttpUrl
-    _client_id: str
+    refresh_token: Optional[str]
+    token_uri: str
+    client_id: str
+    client_secret: str
+    scopes: List[str]
+    expiry: Optional[datetime]
+
 
 class OAuthState(BaseModel):
     """Model for OAuth state data."""
     email: EmailStr
+
+
+from google.oauth2.credentials import Credentials
+from datetime import datetime, timezone
+import requests
+
+class GmailAuthHelper:
+    @staticmethod
+    def is_token_valid(credentials: Credentials) -> bool:
+        """Check if access token is still valid."""
+        if not credentials or not credentials.token or not credentials.expiry:
+            return False
+        return credentials.expiry > datetime.now(timezone.utc)
+
+    @staticmethod
+    def get_valid_token(credentials: Credentials) -> str:
+        """Return a valid token, refreshing it if needed."""
+        if not GmailAuthHelper.is_token_valid(credentials):
+            if credentials.refresh_token:
+                request = requests.Request()  # or use google.auth.transport.requests.Request()
+                credentials.refresh(request)
+            else:
+                raise Exception("Missing refresh token, cannot refresh access token.")
+        return credentials.token
+
+
 
 class AuthService:
     """Service class for handling Gmail authentication."""
@@ -70,7 +95,7 @@ class AuthService:
             raise ValueError("Invalid state parameter")
 
     @classmethod
-    def get_auth_url(cls, email: EmailStr) -> str:
+    def _get_auth_url(cls, email: EmailStr) -> str:
         """Generate OAuth2 authorization URL."""
         try:
             state_str = cls._encode_state(email)
@@ -85,6 +110,7 @@ class AuthService:
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
+                prompt='consent',
                 state=state_str
             )
             return auth_url
@@ -95,10 +121,10 @@ class AuthService:
             raise
 
     @classmethod
-    def send_auth_email(cls, email: EmailStr) -> str:
+    def _send_auth_email(cls, email: EmailStr) -> str:
         """Send authentication email to user with auth URL."""
         try:
-            auth_url = cls.get_auth_url(email)
+            auth_url = cls._get_auth_url(email)
             
             message = {
                 'to': email,
@@ -128,6 +154,30 @@ class AuthService:
             traceback.print_exc()
             raise Exception(f"Failed to send authentication email: {str(e)}")
 
+    def init_gmail_user(cls, email: EmailStr) -> str:
+        """Initialize Gmail user."""
+        return cls._send_auth_email(email)
+
+    def get_gmail_user_creds(cls, email: EmailStr) -> Credentials:
+        """Get Gmail user."""
+        user_token = user_token_store.get(email)
+        if not user_token:
+            raise Exception(f"No user token found for {email}")    
+        gmail_creds = GmailCredentials.parse_raw(user_token)
+        return cls._to_google_credentials(gmail_creds)
+
+    def get_gmail_user_status(cls, email: EmailStr) -> str:
+        """Get Gmail user status."""
+        try:
+            creds = cls.get_gmail_user_creds(email)
+            if creds.expired:
+                return "expired"
+            else:
+                return "valid"
+        except Exception as e:
+            logger.error(f"Error getting Gmail user status: {e}")
+            return "pending"
+
     @staticmethod
     def _get_admin_credentials() -> Credentials:
         """Get admin credentials for sending auth emails."""
@@ -146,6 +196,18 @@ class AuthService:
                 token.write(creds.to_json())
 
         return creds
+
+    @staticmethod
+    def _to_google_credentials(pydantic_creds: GmailCredentials) -> Credentials:
+        return Credentials(
+            token=pydantic_creds.token,
+            refresh_token=pydantic_creds.refresh_token,
+            token_uri=pydantic_creds.token_uri,
+            client_id=pydantic_creds.client_id,
+            client_secret=pydantic_creds.client_secret,
+            scopes=pydantic_creds.scopes,
+            expiry=pydantic_creds.expiry
+        )
 
     @classmethod
     def handle_oauth2callback(cls, state: str, code: str, url: str) -> Dict:
@@ -185,8 +247,18 @@ class AuthService:
                 'expiry': credentials.expiry.isoformat() if credentials.expiry else None
             }
 
+            gmail_creds = GmailCredentials(
+                token=credentials.token,
+                refresh_token=credentials.refresh_token,
+                token_uri=credentials.token_uri,
+                client_id=credentials.client_id,
+                client_secret=credentials.client_secret,
+                scopes=credentials.scopes,
+                expiry=credentials.expiry
+            )
+
             # Store credentials
-            user_token_store.put(email, json.dumps(token_data))
+            user_token_store.put(email, gmail_creds.json())
 
             return {
                 "status": "success",
@@ -202,6 +274,8 @@ class AuthService:
     def check_auth_status(cls, email: EmailStr) -> str:
         """Check the authentication status of a user."""
         user_token = user_token_store.get(email)
+        access_token = user_token.get("token")
+        expiry = user_token.get("expiry")
         if not user_token:
             return "FAILED"
         return "SUCCESSFUL"

@@ -1,25 +1,27 @@
-from typing import TypedDict
+import argparse
+import asyncio
+from typing import Optional
 from eaia.gmail import fetch_group_emails
+from eaia.agent.config.config import get_config
 from langgraph_sdk import get_client
 import httpx
 import uuid
 import hashlib
-from langgraph.graph import StateGraph, START, END
-from eaia.agent.config.config import get_config
-
-client = get_client()
 
 
-class JobKickoff(TypedDict):
-    minutes_since: int
+async def main():
+    config = get_config({"configurable": {}})
+    
+    email_address = config["email"]
+    ea_email = config["ea_email"]
+    client = get_client(url="http://127.0.0.1:2024")
+    minutes_since = 60
 
-
-async def main(state: JobKickoff, config):
-    minutes_since: int = state["minutes_since"]
-    email = get_config(config)["email"]
-
-    # TODO: This really should be async
-    for email in fetch_group_emails(email, minutes_since=minutes_since):
+    for email in fetch_group_emails(
+        email_address,
+        ea_email=ea_email,
+        minutes_since=minutes_since,
+    ):
         thread_id = str(
             uuid.UUID(hex=hashlib.md5(email["thread_id"].encode("UTF-8")).hexdigest())
         )
@@ -37,7 +39,13 @@ async def main(state: JobKickoff, config):
             continue
         recent_email = thread_info["metadata"].get("email_id")
         if recent_email == email["id"]:
-            break
+            if early:
+                break
+            else:
+                if rerun:
+                    pass
+                else:
+                    continue
         await client.threads.update(thread_id, metadata={"email_id": email["id"]})
 
         await client.runs.create(
@@ -48,8 +56,5 @@ async def main(state: JobKickoff, config):
         )
 
 
-graph = StateGraph(JobKickoff)
-graph.add_node(main)
-graph.add_edge(START, "main")
-graph.add_edge("main", END)
-graph = graph.compile()
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -2,7 +2,7 @@ import argparse
 import asyncio
 from typing import Optional
 from eaia.gmail import fetch_group_emails
-from eaia.main.config import get_config
+from eaia.agent.config.config import get_config
 from langgraph_sdk import get_client
 import httpx
 import uuid

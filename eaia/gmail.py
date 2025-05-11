@@ -17,7 +17,7 @@ import email.utils
 
 from langchain_core.tools import tool
 from langchain_core.pydantic_v1 import BaseModel, Field
-from eaia.main.config import get_config
+from eaia.agent.config.config import get_config
 
 from eaia.schemas import EmailData
 

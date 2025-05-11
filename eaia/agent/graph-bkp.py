@@ -3,15 +3,15 @@ import json
 from typing import TypedDict, Literal
 from langgraph.graph import END, StateGraph
 from langchain_core.messages import HumanMessage
-from eaia.main.triage import (
+from eaia.agent.triage import (
     triage_input,
 )
-from eaia.main.draft_response import draft_response
-from eaia.main.find_meeting_time import find_meeting_time
-from eaia.main.rewrite import rewrite
-from eaia.main.config import get_config
+from eaia.agent.draft_response import draft_response
+from eaia.agent.find_meeting_time import find_meeting_time
+from eaia.agent.rewrite import rewrite
+from eaia.agent.config.config import get_config
 from langchain_core.messages import ToolMessage
-from eaia.main.human_inbox import (
+from eaia.agent.human_inbox import (
     send_message,
     send_email_draft,
     notify,

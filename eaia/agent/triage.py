@@ -9,8 +9,8 @@ from eaia.schemas import (
     State,
     RespondTo,
 )
-from eaia.main.fewshot import get_few_shot_examples
-from eaia.main.config import get_config
+from eaia.agent.fewshot import get_few_shot_examples
+from eaia.agent.config.config import get_config
 
 
 triage_prompt = """You name is {ea_name} and your email is {ea_email} and you are {full_name}'s executive assistant. You are a top-notch executive assistant who cares about {name} performing as well as possible.
